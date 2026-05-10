@@ -3,3 +3,6 @@ GMP是Go运行时的核心调度模型
 GMP含义：G是goroutine协程；M是machine系统线程，真正干活的；P是processor，逻辑处理器，它是G和M之间的桥梁。它负责调度G
 
 调度逻辑是这样的，M必须绑定P才能执行G。每个P维护一个自己的本地G队列（长度256），M从P的本地队列取G执行。当本地队列空时，M会按优先级从全局队列、网络轮询器、其他P队列中窃取goroutine，这是work-stealing机制
+
+2、什么是Go scheduler
+Go scheduler就是Go运行时的协程调度器，负责在系统线程上调度执行goroutine。它是Go runtime的一部分，它内嵌在Go程序里，和Go程序一起运行。它的主要工作是决定哪个goroutine在哪个线程上运行，以及何时进行上下文切换。scheduler的核心是schedule()函数，它在无限循环中寻找可运行的goroutine。当找到后通过execute()函数切换到goroutine执行，goroutine主动让出或被抢占时再回到调度循环。
