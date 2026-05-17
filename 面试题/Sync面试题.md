@@ -54,4 +54,76 @@ type Once struct{
 ```
 核心依赖一个uint32的done标志和一个互斥锁Mutex
 当Once.Do(f)首次被调用时：
-a.它首先会通过原子操作
+a.它首先会通过原子操作(atomic.LoadUint32)快速检查done标志位。如果done为1说明初始化已完成，直接返回，这个路径完全无锁，开销极小。
+b.如果done为0，说明可能是第一次调用，这时它会进入一个慢路径(doslow)
+c.在慢路径里，它会先加锁，然后再次检查done标志位。这个双重检查是关键，它防止了在多个goroutine同时进入慢路径时，函数f被重复执行。
+d.如果此时done仍然为0，那么当前goroutine就会执行传入的函数f。执行完毕后，它会通过原子操作(atomic.StoreUint32),将done标志位置为1，最后解锁。
+
+之后任何再调用Do的goroutine,都会在第一步的原子Load操作时发现done为1而直接返回。整个过程结合了原子操作的速度和互斥锁的安全性，高效且线程安全地实现了仅执行一次的保证
+
+9、WaitGroup是怎样实现协程等待？
+WaitGroup实现等待，本质上是一个原子计数器和一个信号量的协作。
+调用Add会增加计数值，Done会减计数值。而Wait方法会检查这个计数器，如果不为零，就利用信号量将当前的goroutine高效地挂起。直到最后一个Done调用将计数器清零，它就会通过这个信号量，一次性唤醒所有在Wait处等待的goroutine，从而实现等待目的
+waitGroup的结构定义
+```go
+type WaitGroup struct{
+    noCopy noCopy //用于vet工具检查是否被复制
+    //64位的值，高32位是计数器，低32位是等待的goroutine的数量
+    //通过原子操作访问，保存了状态和等待者数量
+    state atomic.Uint64
+    //用于等待者休眠的信号量
+    sema uint32
+}
+```
+noCopy:这是一个特殊的字段，用于静态分析工具(go vet)在编译时检查WaitGroup实例是否被复制。WaitGroup被复制后会导致状态不一致，可能引发程序错误，因此该字段的存在旨在防止此类问题的发生。
+state:这是WaitGroup的核心，一个64位的无符号整型，通过sync/atomic包进行原子操作，以保证并发安全。这个64位的空间被巧妙地分成了两部分：
+高32位：作为计数器，记录了需要等待的goroutine的数量
+低32位：作为等待者计数器，记录了调用Wait()方法后被阻塞的goroutine的数量。
+sema:这是一个信号量，用于实现goroutine的阻塞和唤醒。当主goroutine调用Wait()方法且计数器不为零时，它会通过这个信号量进入休眠状态。当所有子goroutine完成任务后，会通过这个信号量来唤醒等待的主goroutine
+
+10、讲讲sync.Map的底层原理
+sync.Map的底层核心是空间换时间，通过两个Map（read和dirty）的冗余结构，实现“读写分离”，最终达到针对特定场景的“读”操作无锁优化
+它的read是一个只读的map，提供无锁的并发读取，速度极快。写操作则会先操作一个加了锁的、可读写的dirty map。当dirty map的数据积累到一定程度，或者read map中没有某个key时，sync.Map会将dirty map里的数据晋升并覆盖掉旧的read map，完成一次数据同步。
+
+sync.Map的结构定义
+```go
+type Map struct{
+    mu Mytex //用于保护dirty字段的锁
+    read atomic.Value //只读字段，其实际的数据类型是一个readOnly结构
+    dirty map[interface{}]*entry //需要加锁才能访问的map，其中包含在read中除了被expunged(删除)以外的所有元素以及新加入的元素
+    misser int //计数器，记录在从read中读取数据的时候，没有命中的次数，当misses值等于dirty长度时，dirty提升为read
+}
+```
+
+read字段的类型是atomic.Value，但是在使用中里面其实存储的是readOnly结构，readOnly结构定义如下：
+```go
+//readOnly is an immutable struct stored atomically in the Map.read field
+type readOnly struct{
+    m map[interface{}]*entry //key为任意可比较类型，value为entry指针
+    amended bool //amended为true，表明dirty中包含read中没有的数据，为false表明dirty中的数据在read中都存在
+}
+```
+entry这个结构：
+```go
+type entry struct{
+    p unsafe.Pointer //p指向真正的value所在的地址
+}
+```
+
+11、read map和dirty map之间有什么关联？
+它们之间是只读缓存和最新全集的关联。
+read map是dirty map的一个不完全、且可能是过期的只读快照。dirty map则包含了所有的最新数据
+具体来说，read map中的所有数据，在dirty map里一定存在。一个key如果在read map里，那它的value要么就是最终值，要么就是一个特殊指针，指向dirty map里对应的条目。而dirty map里有，read map里却可能没有，因为dirty是最新的最全的。
+当dirty map积累了足够多的新数据后，它会晋升为新的read map,旧的read map则被废弃。这个过程，就完成了缓存的更新。
+
+
+12、为什么要设计nil和expunged两种删除状态？
+设计nil和expunged这两个状态，是为了解决在sync.Map的读写分离架构下，如何高效、无锁地处理删除操作
+因为read map本身是只读的，我们不能直接从中删除一个key。所以，当用户调用Delete时，如果这个key存在于read中，系统会通过原子操作把entry.p置为nil，后续的读操作如果看到nil就直接返回nil,false
+而expunged是更彻底的删除标记：当之后某次写操作需要基于read重建dirty map时，会扫描read，把所有p==nil的entry进一步标记为expunged，表示该key不再被复制到新的dirty中。后续如果要重新Store一个expunged的key，必须先把它从expunged回退为nil并同步到dirty,再写入
+简单来说，这两个状态就像是在只读的read map上打的逻辑删除补丁。它避免了因为一次delete操作就引发加锁和map的整体复制，把真正的物理删除延迟到了dirty map晋升为read map的那一刻，是典型的用状态标记来换取无锁性能的设计
+
+
+13、sync.Map适用的场景？
+sync.Map适合读多写少的场景，而不是适合写多读少的场景
+因为我们期望将更多的流量在read map这一层进行拦截，从而避免加锁访问dirty map对于更新，删除，读取，read map可以尽量通过一些原子操作，让整个操作变得无锁化，这样就可以避免进一步加锁访问dirty map。倘若写操作过多,sync.Map基本等价于一把互斥锁+map，其读写效率会大大下降。
