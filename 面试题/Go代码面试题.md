@@ -73,8 +73,7 @@ func main(){
 			<-ch2
 			fmt.Println("b")
 			ch3<- struct{}{}
-		}
-	}()
+		}	}()
 	//打印c
 	go func(){
 		defer wg.Done()
