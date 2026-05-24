@@ -168,3 +168,40 @@ func test9(){
 	fmt.Println("end")
 }
 ```
+
+4.两个协程交替打印奇偶数
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+)
+func main(){
+	//golang交替打印奇偶数
+	//交替打印，可以通过channel来实现
+	chan1:=make(chan struct{})
+	//偶数
+	go func(){
+		for i:=0;i<10;i++{
+			chan1<-struct{}{}
+			if i%2==0{
+				fmt.Println("打印偶数：",i)
+			}
+		}
+	}()
+	//奇数
+	go func(){
+		for i:=0,i<10;i++{
+			<-cha1
+			if i%2==1{
+				fmt.Println("打印奇数:",i)
+			}
+		}
+	}()
+	//阻塞
+	select{
+		case <-time.After(time.Second*10):
+	}
+}
+```
