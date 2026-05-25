@@ -205,3 +205,31 @@ func main(){
 	}
 }
 ```
+5.用单个channel实现0,1的交替打印
+```go
+package main
+
+import(
+	"fmt"
+	"time"
+)
+
+func main(){
+	msg:=make(chan struct{})
+	go func(){
+		for{
+			<-msg
+			fmt.Println("0")
+			msg<-struct{}{}
+		}
+	}()
+	go func(){
+		for{
+			<-msg
+			fmt.Println("1")
+			msg<-struct{}{}
+		}
+	}
+	msg
+}
+```
