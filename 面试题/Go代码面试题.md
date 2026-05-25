@@ -233,3 +233,196 @@ func main(){
 	msg
 }
 ```
+
+6.sync.Cond实现多生产者多消费者
+```go
+package main
+import(
+	"context"
+	"fmt"
+	"math/rand"
+	"sync"
+	"time"
+)
+func main(){
+	var wg sync.WaitGroup
+	var cond sync.Cond
+	cond.L=new(sync.Mutex)
+	msgCh:=make(chan int,5)
+	ctx,cancel:=context.WithTimeout(context.Background(),3*time.Second)
+	defer cancel()
+	rand.Seed(time.Now().UnixNano())
+	//生产者
+	producer:=func(ctx context.Context,out chan<- int,idx int){
+		defer wg.Done()
+		for{
+			select{
+				case <-ctx.Done():
+					//每次生产者退出，都唤醒一个消费者处理，防止最后有消费者线程死锁
+					//生产者比消费者多，所以cond.Signal()就可以。不然的话建议Broadcase()
+					cond.Broadcast()
+					fmt.Println("producer finished")
+					return
+				default:
+					cond.L.Lock()
+					for len(msgCh)==5{
+						cond.Wait()
+					}
+					num:=rand.Intn(500)
+					out<-num
+					fmt.Printf("producer:%d,msg:%d\n",idx,num)
+					cond.Signal()
+					cond.L.Unlock()
+			}
+		}
+	}
+	//消费者
+	consumer:=func(ctx context.Context,in <-chan int,idx int){
+		defer wg.Done()
+		for{
+			select{
+				case <-ctx.Done():
+					//消费者可以选择继续消费直到channel为空
+					for len(msgCh)>0{
+						select{
+							case num:=<-in:
+								fmt.Printf("consumer %d,msg:%d\n",idx,num)
+							default:
+								//如果channel已经空了，跳出循环
+								break
+						}
+					}
+					fmt.Println("consumer finished")
+					return
+				default:
+					cond.L.Lock()
+					for len(msgCh)==0{
+						cond.Wait()
+					}
+					num:=<-in
+					fmt.Printf("consumer %d,msg:%d\n",idx,num)
+					cond.Signal()
+					cond.L.Unlock()
+			}
+		}
+	}
+	//启动生产者和消费者
+	for i:=0;i<5;i++{
+		wg.Add(1)
+		go producer(ctx,msgCh,i+1)
+	}
+	for i:=0;i<3;i++{
+		wg.Add(1)
+		go consumer(ctx,msgCh,i+1)
+	}
+	//模拟程序运行一段时间
+	wg.Wait()
+	close(msgCh)
+	fmt.Println("all finished")
+}
+```
+
+7.使用go实现1000个并发控制并设置执行超过时间1秒
+```go
+package main
+
+import(
+	"context"
+	"fmt"
+	"sync"
+	"time"
+)
+
+func main(){
+	//创建1000个协程，并且进行打印
+	//总共超过时间1s，1s没执行完就超时，使用ctx进行控制
+	//定义任务channel
+	tasks:=make(chan int,1000)
+	//定义ctx
+	ctx.cancel:=context.WithTimeout(context.Background(),1*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	//启动1000个协程
+	for i:=0;i<1000;i++{
+		wg.Add(1)
+		tasks <-i
+		go func(id int){
+			defer wg.Done()
+			select{
+				case <-ctx.Done():
+					return
+				default:
+					fmt.Printf("goroutine id:%d\n",id)
+			}
+		}(i)
+	}
+	<-ctx.Done()
+	fmt.Println("exec done")
+	close(tasks)
+	wg.Wait()
+	fmt.Println("finish")
+}
+```
+8.使用两个Goroutine，向标准输出中按顺序交替打出字母与数字，输出是a1b2c3
+```go
+package main
+
+import(
+	"fmt"
+	"sync"
+)
+func main(){
+	//定义两个channel,一个打印数字，一个打印字母
+	numCh:=make(chan struct{})
+	strCh:=make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	//打印字符
+	go func(){
+		defer wg.Done()
+		for i:='a';i<='z';i++{
+			fmt.Println(string(i))
+			//通知打印数字
+			numCh<- struct{}{}
+			//阻塞等待打印字母
+			<-strCh
+		}
+	}()
+	//打印字母
+	go func(){
+		defer wg.Done()
+		for i:=1;i<=26;i++{
+			<-numCh
+			fmt.Println()
+			//通知打印字母
+			strCh<- struct{}{}
+		}
+	}()
+	wg.Wait()
+	fmt.Println("finished")
+}
+```
+9.编写一个程序限制10个goroutine执行，每执行完一个goroutine就放一个新的goroutine进来
+```go
+package main
+
+import(
+	"fmt"
+	"sync"
+)
+//编写一个程序限制10个goroutine执行，每执行完一个goroutine就放一个新的goroutine进来
+func main(){
+	var wg sync.WaitGroup
+	ch:=make(chan struct{},10)
+	for i:=0;i<20;i++{
+		wg.Add(1)
+		ch <-struct{}{}
+		go func(id int){
+			defer wg.Done()
+			fmt.Printf("id:%d\n",id)
+			<-ch
+		}(i)
+	}
+	wg.Wait()
+}
+```
