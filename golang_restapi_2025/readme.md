@@ -3,7 +3,7 @@ password util (hashing and comparing passwords)
 jwt
 signup user
 
-curl -X POST http://localhost:8081/user/register 
+curl -X POST http://localhost:8081/users/register 
 -H "Content-Type: application/json" 
 -d '{
     "username":"mimi",

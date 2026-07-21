@@ -106,13 +106,14 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db             DBTX
-	tx             *sql.Tx
-	createBlogStmt *sql.Stmt
-	createUserStmt *sql.Stmt
-	getUserStmt    *sql.Stmt
-	listBlogsStmt  *sql.Stmt
-	listUsersStmt  *sql.Stmt
+	db                           DBTX
+	tx                           *sql.Tx
+	createBlogStmt               *sql.Stmt
+	createUserStmt               *sql.Stmt
+	getUserStmt                  *sql.Stmt
+	listBlogsStmt                *sql.Stmt
+	listUsersStmt                *sql.Stmt
+	GetUserByUsernameOrEmailStmt *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
