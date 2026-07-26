@@ -9,6 +9,8 @@ import (
 
 var Ctx = context.Background()
 
+var RedisClient *redis.Client
+
 func ConnectRedis(redisAddr string, redisPassword string) *redis.Client {
 	db := 0
 
@@ -24,5 +26,6 @@ func ConnectRedis(redisAddr string, redisPassword string) *redis.Client {
 		panic(fmt.Sprintf("Failed to connect to redis:%v", err))
 	}
 	fmt.Println("Connected to redis successfully")
+	RedisClient = rdb
 	return rdb
 }
