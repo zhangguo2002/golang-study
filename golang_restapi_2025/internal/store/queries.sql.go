@@ -211,3 +211,30 @@ func (q *Queries) GetUserByUsernameOrEmail(ctx context.Context, username string)
 	)
 	return i, err
 }
+
+const getUserProfileByUserId = `-- name: GetUserProfileByUserId :one
+SELECT id,user_id,profile_image,created,updated
+FROM user_profiles
+WHERE user_id = $1
+`
+
+type GetUserProfileByUserIdRow struct {
+	ID           int32        `json:"id"`
+	UserID       int64        `json:"user_id"`
+	ProfileImage string       `json:"profile_image"`
+	Created      sql.NullTime `json:"created"`
+	Updated      sql.NullTime `json:"updated"`
+}
+
+func (q *Queries) GetUserProfileByUserId(ctx context.Context, user_id int64) (GetUserProfileByUserIdRow, error) {
+	row := q.queryRow(ctx, q.GetUserProfileByUserIdStmt, getUserProfileByUserId, user_id)
+	var i GetUserProfileByUserIdRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ProfileImage,
+		&i.Created,
+		&i.Updated,
+	)
+	return i, err
+}

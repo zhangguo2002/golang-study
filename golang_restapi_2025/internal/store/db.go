@@ -114,6 +114,7 @@ type Queries struct {
 	listBlogsStmt                *sql.Stmt
 	listUsersStmt                *sql.Stmt
 	GetUserByUsernameOrEmailStmt *sql.Stmt
+	GetUserProfileByUserIdStmt   *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {

@@ -8,10 +8,12 @@ import (
 )
 
 type Config struct {
-	ServerPort  string
-	DatabaseURL string
-	Environment string
-	LogLevel    string
+	ServerPort    string
+	DatabaseURL   string
+	Environment   string
+	LogLevel      string
+	RedisAddr     string
+	RedisPassword string
 }
 
 func LoadConfig() (*Config, error) {
@@ -19,10 +21,12 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("Error loading file: %v", err)
 	}
 	return &Config{
-		ServerPort:  getEnv("SERVER_PORT", "8080"),
-		DatabaseURL: getEnv("DATABASE_URL", "postgres"),
-		Environment: getEnv("ENVIRONMENT", "development"),
-		LogLevel:    getEnv("LOG_LEVEL", "info"),
+		ServerPort:    getEnv("SERVER_PORT", "8080"),
+		DatabaseURL:   getEnv("DATABASE_URL", "postgres"),
+		Environment:   getEnv("ENVIRONMENT", "development"),
+		LogLevel:      getEnv("LOG_LEVEL", "info"),
+		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", "123456"),
 	}, nil
 }
 

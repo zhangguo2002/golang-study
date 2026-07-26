@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/zhangguo2002/golangrestapi/dbconfig"
 	"github.com/zhangguo2002/golangrestapi/internal/handlers"
 	"github.com/zhangguo2002/golangrestapi/internal/routes"
@@ -21,10 +22,16 @@ func main() {
 	//connect to db
 	db := dbconfig.ConnectDB(config.DatabaseURL)
 	defer db.Close()
+	//connect to redis
+	rdb := dbconfig.ConnectRedis(config.RedisAddr, config.RedisPassword)
+	defer func(rdb *redis.Client) {
+		_ = rdb.Close()
+	}(rdb)
+
 	dbconfig.RunMigrations(db, "internal/migrations/schema.sql")
 	queries := store.New(db)
 	//Create a new handler
-	handler := handlers.NewHandlers(db, queries)
+	handler := handlers.NewHandlers(db, queries, rdb)
 	//set up the HTTP server
 	mux := http.NewServeMux()
 	//Setup Routes

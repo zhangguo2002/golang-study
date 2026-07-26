@@ -2,15 +2,51 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/zhangguo2002/golangrestapi/internal/auth"
 	"github.com/zhangguo2002/golangrestapi/internal/dtos"
+	"github.com/zhangguo2002/golangrestapi/internal/middlewares"
 	"github.com/zhangguo2002/golangrestapi/internal/store"
 	"github.com/zhangguo2002/golangrestapi/internal/utils"
 )
+
+// profile
+func (h *Handler) UserProfile() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := r.Context().Value(middlewares.UserClaimsKey).(*auth.Claims)
+		if !ok {
+			utils.RespondWithError(w, http.StatusBadRequest, "please login to continue")
+			return
+		}
+		userID := claims.UserID
+
+		//check the redis first
+		cacheKey := fmt.Sprintf("user:%d", userID)
+		if cached, err := h.Redis.Get(r.Context(), cacheKey).Result(); err != nil {
+			var user store.User
+			if err := json.Unmarshal([]byte(cached), &user); err == nil {
+				utils.RespondWithSuccess(w, http.StatusOK, "success (from cache/redis)", user)
+				return
+			}
+		}
+		//fallback to db
+		user, err := h.Queries.GetUserProfileByUserId(r.Context(), int64(userID))
+		if err != nil {
+			utils.RespondWithError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		//set to redis
+		userJSON, _ := json.Marshal(user)
+		h.Redis.Set(r.Context(), cacheKey, userJSON, 5*time.Minute)
+
+		utils.RespondWithSuccess(w, http.StatusOK, "success", user)
+	}
+}
 
 // login a user
 func (h *Handler) LoginUserHandler() http.HandlerFunc {
