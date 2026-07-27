@@ -30,8 +30,17 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.createUserStmt, err = db.PrepareContext(ctx, createUser); err != nil {
 		return nil, fmt.Errorf("error preparing query CreateUser: %w", err)
 	}
+	if q.createUserProfileStmt, err = db.PrepareContext(ctx, createUserProfile); err != nil {
+		return nil, fmt.Errorf("error preparing query CreateUserProfile: %w", err)
+	}
 	if q.getUserStmt, err = db.PrepareContext(ctx, getUser); err != nil {
 		return nil, fmt.Errorf("error preparing query GetUser: %w", err)
+	}
+	if q.getUserByUsernameOrEmailStmt, err = db.PrepareContext(ctx, getUserByUsernameOrEmail); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUserByUsernameOrEmail: %w", err)
+	}
+	if q.getUserProfileByUserIdStmt, err = db.PrepareContext(ctx, getUserProfileByUserId); err != nil {
+		return nil, fmt.Errorf("error preparing query GetUserProfileByUserId: %w", err)
 	}
 	if q.listBlogsStmt, err = db.PrepareContext(ctx, listBlogs); err != nil {
 		return nil, fmt.Errorf("error preparing query ListBlogs: %w", err)
@@ -54,9 +63,24 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing createUserStmt: %w", cerr)
 		}
 	}
+	if q.createUserProfileStmt != nil {
+		if cerr := q.createUserProfileStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing createUserProfileStmt: %w", cerr)
+		}
+	}
 	if q.getUserStmt != nil {
 		if cerr := q.getUserStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getUserStmt: %w", cerr)
+		}
+	}
+	if q.getUserByUsernameOrEmailStmt != nil {
+		if cerr := q.getUserByUsernameOrEmailStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUserByUsernameOrEmailStmt: %w", cerr)
+		}
+	}
+	if q.getUserProfileByUserIdStmt != nil {
+		if cerr := q.getUserProfileByUserIdStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getUserProfileByUserIdStmt: %w", cerr)
 		}
 	}
 	if q.listBlogsStmt != nil {
@@ -110,21 +134,25 @@ type Queries struct {
 	tx                           *sql.Tx
 	createBlogStmt               *sql.Stmt
 	createUserStmt               *sql.Stmt
+	createUserProfileStmt        *sql.Stmt
 	getUserStmt                  *sql.Stmt
+	getUserByUsernameOrEmailStmt *sql.Stmt
+	getUserProfileByUserIdStmt   *sql.Stmt
 	listBlogsStmt                *sql.Stmt
 	listUsersStmt                *sql.Stmt
-	GetUserByUsernameOrEmailStmt *sql.Stmt
-	GetUserProfileByUserIdStmt   *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:             tx,
-		tx:             tx,
-		createBlogStmt: q.createBlogStmt,
-		createUserStmt: q.createUserStmt,
-		getUserStmt:    q.getUserStmt,
-		listBlogsStmt:  q.listBlogsStmt,
-		listUsersStmt:  q.listUsersStmt,
+		db:                           tx,
+		tx:                           tx,
+		createBlogStmt:               q.createBlogStmt,
+		createUserStmt:               q.createUserStmt,
+		createUserProfileStmt:        q.createUserProfileStmt,
+		getUserStmt:                  q.getUserStmt,
+		getUserByUsernameOrEmailStmt: q.getUserByUsernameOrEmailStmt,
+		getUserProfileByUserIdStmt:   q.getUserProfileByUserIdStmt,
+		listBlogsStmt:                q.listBlogsStmt,
+		listUsersStmt:                q.listUsersStmt,
 	}
 }

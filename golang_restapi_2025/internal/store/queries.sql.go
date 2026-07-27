@@ -77,6 +77,30 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 	return i, err
 }
 
+const createUserProfile = `-- name: CreateUserProfile :one
+INSERT INTO user_profiles(user_id,profile_image)
+VALUES ($1,$2)
+RETURNING id,user_id,profile_image,created,updated
+`
+
+type CreateUserProfileParams struct {
+	UserID       int32          `json:"user_id"`
+	ProfileImage sql.NullString `json:"profile_image"`
+}
+
+func (q *Queries) CreateUserProfile(ctx context.Context, arg CreateUserProfileParams) (UserProfile, error) {
+	row := q.queryRow(ctx, q.createUserProfileStmt, createUserProfile, arg.UserID, arg.ProfileImage)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ProfileImage,
+		&i.Created,
+		&i.Updated,
+	)
+	return i, err
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id,username,email,created,updated
 FROM users
@@ -98,6 +122,54 @@ func (q *Queries) GetUser(ctx context.Context, id int32) (GetUserRow, error) {
 		&i.ID,
 		&i.Username,
 		&i.Email,
+		&i.Created,
+		&i.Updated,
+	)
+	return i, err
+}
+
+const getUserByUsernameOrEmail = `-- name: GetUserByUsernameOrEmail :one
+SELECT id,username,email,created,updated,password
+FROM users
+WHERE username = $1 OR email = $1
+`
+
+type GetUserByUsernameOrEmailRow struct {
+	ID       int32        `json:"id"`
+	Username string       `json:"username"`
+	Email    string       `json:"email"`
+	Created  sql.NullTime `json:"created"`
+	Updated  sql.NullTime `json:"updated"`
+	Password string       `json:"password"`
+}
+
+func (q *Queries) GetUserByUsernameOrEmail(ctx context.Context, username string) (GetUserByUsernameOrEmailRow, error) {
+	row := q.queryRow(ctx, q.getUserByUsernameOrEmailStmt, getUserByUsernameOrEmail, username)
+	var i GetUserByUsernameOrEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.Created,
+		&i.Updated,
+		&i.Password,
+	)
+	return i, err
+}
+
+const getUserProfileByUserId = `-- name: GetUserProfileByUserId :one
+SELECT id,user_id,profile_image,created,updated
+FROM user_profiles
+WHERE user_id = $1
+`
+
+func (q *Queries) GetUserProfileByUserId(ctx context.Context, userID int32) (UserProfile, error) {
+	row := q.queryRow(ctx, q.getUserProfileByUserIdStmt, getUserProfileByUserId, userID)
+	var i UserProfile
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ProfileImage,
 		&i.Created,
 		&i.Updated,
 	)
@@ -144,7 +216,13 @@ const listUsers = `-- name: ListUsers :many
 SELECT id,username,email,created,updated
 FROM users
 ORDER BY id
+LIMIT $1 OFFSET $2
 `
+
+type ListUsersParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
 
 type ListUsersRow struct {
 	ID       int32        `json:"id"`
@@ -154,8 +232,8 @@ type ListUsersRow struct {
 	Updated  sql.NullTime `json:"updated"`
 }
 
-func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
-	rows, err := q.query(ctx, q.listUsersStmt, listUsers)
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
+	rows, err := q.query(ctx, q.listUsersStmt, listUsers, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -181,60 +259,4 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 		return nil, err
 	}
 	return items, nil
-}
-
-const getUserByUsernameOrEmail = `-- name: GetUserByUsernameOrEmail :one
-SELECT id,username,email,created,updated,password
-FROM users
-WHERE username = $1 OR email = $1 
-`
-
-type GetUserByUsernameOrEmailRow struct {
-	ID       int32        `json:"id"`
-	Username string       `json:"username"`
-	Email    string       `json:"email"`
-	Created  sql.NullTime `json:"created"`
-	Updated  sql.NullTime `json:"updated"`
-	Password string       `json:"password"`
-}
-
-func (q *Queries) GetUserByUsernameOrEmail(ctx context.Context, username string) (GetUserByUsernameOrEmailRow, error) {
-	row := q.queryRow(ctx, q.GetUserByUsernameOrEmailStmt, getUserByUsernameOrEmail, username)
-	var i GetUserByUsernameOrEmailRow
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.Email,
-		&i.Created,
-		&i.Updated,
-		&i.Password,
-	)
-	return i, err
-}
-
-const getUserProfileByUserId = `-- name: GetUserProfileByUserId :one
-SELECT id,user_id,profile_image,created,updated
-FROM user_profiles
-WHERE user_id = $1
-`
-
-type GetUserProfileByUserIdRow struct {
-	ID           int32        `json:"id"`
-	UserID       int64        `json:"user_id"`
-	ProfileImage string       `json:"profile_image"`
-	Created      sql.NullTime `json:"created"`
-	Updated      sql.NullTime `json:"updated"`
-}
-
-func (q *Queries) GetUserProfileByUserId(ctx context.Context, user_id int64) (GetUserProfileByUserIdRow, error) {
-	row := q.queryRow(ctx, q.GetUserProfileByUserIdStmt, getUserProfileByUserId, user_id)
-	var i GetUserProfileByUserIdRow
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.ProfileImage,
-		&i.Created,
-		&i.Updated,
-	)
-	return i, err
 }

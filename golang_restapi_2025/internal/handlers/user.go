@@ -2,14 +2,18 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/cloudinary/cloudinary-go"
+	"github.com/cloudinary/cloudinary-go/api/uploader"
 	"github.com/zhangguo2002/golangrestapi/internal/auth"
 	"github.com/zhangguo2002/golangrestapi/internal/dtos"
 	"github.com/zhangguo2002/golangrestapi/internal/middlewares"
@@ -102,7 +106,7 @@ func (h *Handler) UserProfile() http.HandlerFunc {
 
 		//check the redis first
 		cacheKey := fmt.Sprintf("user:%d", userID)
-		if cached, err := h.Redis.Get(r.Context(), cacheKey).Result(); err != nil {
+		if cached, err := h.Redis.Get(r.Context(), cacheKey).Result(); err == nil {
 			var user store.User
 			if err := json.Unmarshal([]byte(cached), &user); err == nil {
 				utils.RespondWithSuccess(w, http.StatusOK, "success (from cache/redis)", user)
@@ -110,7 +114,7 @@ func (h *Handler) UserProfile() http.HandlerFunc {
 			}
 		}
 		//fallback to db
-		user, err := h.Queries.GetUserProfileByUserId(r.Context(), int64(userID))
+		user, err := h.Queries.GetUserProfileByUserId(r.Context(), int32(userID))
 		if err != nil {
 			utils.RespondWithError(w, http.StatusNotFound, "user not found")
 			return
@@ -157,6 +161,64 @@ func (h *Handler) LoginUserHandler() http.HandlerFunc {
 	}
 }
 
+// upload user profile
+func (h *Handler) UploadProfileImageHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		claims, ok := r.Context().Value(middlewares.UserClaimsKey).(*auth.Claims)
+		if !ok {
+			utils.RespondWithError(w, http.StatusBadRequest, "please login to continue")
+			return
+		}
+		userID := claims.UserID
+		//upload from the form data
+		err := r.ParseMultipartForm(10 << 20) //Max file of 10MB
+		if err != nil {
+			utils.RespondWithError(w, http.StatusBadRequest, "Error parsing data")
+			return
+		}
+		//file type：image/ file
+		file, fileHeader, err := r.FormFile("profile_image")
+		if err != nil {
+			utils.RespondWithError(w, http.StatusBadRequest, "Error retrieving file")
+			return
+		}
+		defer file.Close()
+
+		cld, err := cloudinary.NewFromParams(
+			"jtax9qbt",
+			"596377295866749",
+			"DEvzg1p90cEdZACVQX4pCxK6lJY",
+		)
+		if err != nil {
+			utils.RespondWithError(w, http.StatusBadRequest, "Error initiating cloudinary")
+			return
+		}
+		uploadResult, err := cld.Upload.Upload(ctx, file, uploader.UploadParams{
+			Folder:   "profile_image",
+			PublicID: fileHeader.Filename,
+		})
+		if err != nil {
+			utils.RespondWithError(w, http.StatusInternalServerError, "Error uploading image")
+			return
+		}
+		//commit to the db
+		_, err = h.Queries.CreateUserProfile(ctx, store.CreateUserProfileParams{
+			UserID: int32(userID),
+			ProfileImage: sql.NullString{
+				String: uploadResult.SecureURL,
+				Valid:  uploadResult.SecureURL != "",
+			},
+		})
+		if err != nil {
+			utils.RespondWithError(w, http.StatusInternalServerError, "Error saving profile image")
+			return
+		}
+
+		utils.RespondWithSuccess(w, http.StatusOK, "Image uploaded successfully", uploadResult.SecureURL)
+	}
+}
+
 func (h *Handler) CreateUserHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		//create context
@@ -183,5 +245,29 @@ func (h *Handler) CreateUserHandler() http.HandlerFunc {
 			return
 		}
 		utils.RespondWithSuccess(w, http.StatusCreated, "user created", req.Username)
+	}
+}
+
+func (h *Handler) ListUserHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		if limit <= 0 {
+			limit = 10
+		}
+		if offset < 0 {
+			offset = 0
+		}
+
+		users, err := h.Queries.ListUsers(ctx, store.ListUsersParams{
+			Limit:  int32(limit),
+			Offset: int32(offset),
+		})
+		if err != nil {
+			utils.RespondWithError(w, http.StatusInternalServerError, "failed to fetch users")
+			return
+		}
+		utils.RespondWithSuccess(w, http.StatusOK, "success", users)
 	}
 }
