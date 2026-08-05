@@ -16,6 +16,7 @@ import (
 	// package. Note that we alias this import to the blank identifier, to stop the Go
 	// compiler complaining that the package isn't being used.
 	_ "github.com/lib/pq"
+	"greenlight.alexedwards.net/internal/data"
 )
 
 const version = "1.0.0"
@@ -34,9 +35,12 @@ type config struct {
 		maxIdleTime  string
 	}
 }
+
+// Add a models field to hold our new Models struct.
 type application struct {
 	config config
 	logger *log.Logger
+	models data.Models
 }
 
 func main() {
@@ -69,17 +73,16 @@ func main() {
 	app := &application{
 		config: cfg,
 		logger: logger,
+		models: data.NewModels(db),
 	}
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.port),
+		Addr:         fmt.Sprintf(":%d ", cfg.port),
 		Handler:      app.routes(),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
-	logger.Printf("starting %s server on %s", cfg.env, srv.Addr)
-	// Because the err variable is now already declared in the code above, we need
-	// to use the = operator here, instead of the := operator.
+	logger.Printf("starting %s server on %s ", cfg.env, srv.Addr)
 	err = srv.ListenAndServe()
 	logger.Fatal(err)
 }
